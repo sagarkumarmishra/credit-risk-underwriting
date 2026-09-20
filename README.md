@@ -23,8 +23,7 @@ lender actually asks.
 
 ## Why I built this
 
-I have spent my career in data engineering, and I am moving into machine
-learning. This project is the argument for why that background is worth
+I have spent my career in Machine Learning, and this project is the argument for why that background is worth
 something rather than a thing to apologise for.
 
 Search for "Lending Club default prediction" and you will find dozens of
@@ -84,7 +83,7 @@ make test         # 45 tests
 `make sample` does the same on a 200k-row slice if you want to see it work
 without the full download.
 
----
+
 
 ## The centrepiece: a contract, not a convention
 
@@ -123,7 +122,7 @@ sounds like an outcome and is not: it counts charge-offs on the borrower's
 *other* accounts before this loan existed. Excluding it would throw away real
 signal for no reason. Over-correcting is its own mistake.
 
----
+
 
 ## The subtle trap
 
@@ -140,7 +139,7 @@ That is exactly how it ends up in a feature list by accident.
 in a matured population outstanding principal is always zero. Worth saying
 rather than hiding.
 
----
+
 
 ## A prediction of mine that was wrong
 
@@ -156,7 +155,7 @@ It stays in the write-up as a failed hypothesis with the mechanism explained. It
 makes the leakage result more credible, not less — one claim held spectacularly,
 the other did not, and both were measured the same way.
 
----
+
 
 ## The population is smaller than it looks, on purpose
 
@@ -176,7 +175,7 @@ The maturity rule keeps 100% of 2013 originations, 30.6% of 2016, and **none at
 all** of 2017 and 2018. Losing a quarter of a million recent loans hurts and it
 is still correct.
 
----
+
 
 ## Models, and what each one is for
 
@@ -204,7 +203,7 @@ Calibration improves Brier while leaving AUC untouched, which is the point:
 of the gap, and the reason is honest — isotonic was fitted on 2014 originations,
 which defaulted at 14.63%, and the test vintages run hotter.
 
----
+
 
 ## A probability is not a decision
 
@@ -254,7 +253,7 @@ Lending Club's own underwriting, so the model is finding residual risk among
 applicants who already passed a credit screen. The easy declines happened
 upstream and are not in the data.
 
----
+
 
 ## Monitoring: three signals that disagree
 
@@ -295,7 +294,7 @@ That is a number a credit committee can accept or reject, which is considerably
 more useful than an opinion about interpretability. Failing the gate is the
 expected outcome most of the time — that is the point of having one.
 
----
+
 
 ## Serving
 
@@ -339,7 +338,7 @@ in a cluster than one that says why.
 > and smoke-tested by GitHub Actions rather than locally. CI starts the
 > container with no model mounted and asserts `/health` answers.
 
----
+
 
 ## Honest limitations
 
@@ -361,7 +360,7 @@ in a cluster than one that says why.
   upside, no funding cost, no prepayment, no discounting. Each is a real
   omission; none changes the ranking of the policies.
 
----
+
 
 ## Data
 
