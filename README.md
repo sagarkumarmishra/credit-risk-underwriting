@@ -1,311 +1,325 @@
-# Consumer credit underwriting, done point-in-time
+<div align="center">
 
-Probability of default on **779,025 Lending Club loans**, and the lending policy
-that follows from it.
+# Credit Risk Underwriting
 
-The headline finding first, because it is the reason this project exists:
+### A point-in-time, production-minded credit decisioning system
 
-| Configuration | Split | Columns | AUC |
-|---|---|---|---|
-| **A** careless | random | all, including post-origination | **1.0000** |
-| **B** | out-of-time | all, including post-origination | 0.9999 |
-| **C** | random | origination only | 0.7041 |
-| **D** honest | out-of-time | origination only | **0.7083** |
+Predict default risk using only information available **before a loan is funded** — then turn that probability into a loan-specific approval decision, an explainable score, and a monitoring signal.
 
-Cell A is a **perfect classifier**. It is also completely undeployable, because
-the columns that make it perfect are empty at the moment an underwriter has to
-decide. Cell D is the only number in that table that answers the question a
-lender actually asks.
+<p>
+  <strong>779,025</strong> matured loans · <strong>105</strong> modelling features · <strong>0.7007</strong> honest out-of-time AUC
+</p>
 
-![The leakage 2x2](docs/assets/leakage_grid.png)
+<p>
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#why-this-project-exists">Why this exists</a> ·
+  <a href="#system-design">System design</a> ·
+  <a href="#results">Results</a> ·
+  <a href="#serving">Serving</a>
+</p>
 
----
-
-## Why I built this
-
-I have spent my career in Machine Learning, and this project is the argument for why that background is worth
-something rather than a thing to apologise for.
-
-Search for "Lending Club default prediction" and you will find dozens of
-notebooks reporting 0.95 to 0.99 AUC. Almost none of them could be put in front
-of a real applicant. The dataset contains 38 columns recorded *after* the money
-went out — total payments received, recoveries, settlement amounts, the
-borrower's credit score at the most recent bureau pull. Train on those and you
-are predicting the past from the future.
-
-Spotting that is not a statistics problem. It is a **lineage** problem: the
-feature was recorded downstream of the event it claims to predict. That is the
-same instinct as refusing to join a fact table to a dimension snapshot taken
-after the fact, and it is exactly what a data engineer has. So the DE background
-is the reason the trap gets avoided, and the rest of the repository is the ML.
+</div>
 
 ---
 
-## What is here
+## The short version
 
+This is not just a notebook that predicts loan defaults. It is a complete credit-risk workflow built around one question:
+
+> **Would this feature actually exist at the moment an underwriter has to decide?**
+
+The project takes the Lending Club accepted-loan dataset from raw CSV to a working underwriting service. It builds a point-in-time data contract, creates a leakage-resistant modelling population, compares an interpretable WOE scorecard with LightGBM, calibrates probabilities, calculates expected value for each loan, serves decisions through FastAPI, and monitors drift over time.
+
+The headline result is also the central lesson:
+
+| Setup | Split | Features | AUC | Deployable? |
+|---|---|---|---:|---|
+| Careless | Random | All columns, including post-origination data | **1.0000** | No |
+| Careless | Out-of-time | All columns, including post-origination data | 0.9999 | No |
+| Clean | Random | Origination-only data | 0.7041 | Almost |
+| **Honest** | **Out-of-time** | **Origination-only data** | **0.7083** | **Yes** |
+
+A perfect score can be completely useless. The model only matters if it can make the same decision in production that it made during evaluation.
+
+![Leakage 2x2](docs/assets/leakage_grid.png)
+
+---
+
+## Why this project exists
+
+“Predict loan defaults with machine learning” is one of the most common portfolio projects. It is also one of the easiest places to accidentally build a model that could never work in the real world.
+
+The Lending Club extract contains 151 columns. Many of them describe what happened **after** the loan was issued:
+
+- payments received
+- recoveries after charge-off
+- settlement amounts
+- hardship programmes
+- the borrower’s most recent credit score
+
+Those columns make the prediction look impressive because they reveal the outcome. But they are empty when the application is being reviewed.
+
+That is not primarily a modelling mistake. It is a **data-lineage mistake**.
+
+A feature recorded after the event cannot be used to predict that event. This project treats that rule as executable code instead of a comment in a notebook. Every source column is classified, every feature matrix is checked, and the pipeline stops when the data shape changes unexpectedly.
+
+The machine-learning work is important. The time-awareness comes first.
+
+---
+
+## What the system does
+
+```mermaid
+flowchart LR
+    A[Accepted loans CSV] --> B[Resumable download<br/>SHA-256 + byte check]
+    B --> C[DuckDB warehouse]
+    C --> D[Point-in-time contract]
+    D --> E[Modelling population]
+    E --> F[Feature engineering]
+    F --> G[Out-of-time split]
+    G --> H[WOE scorecard]
+    G --> I[LightGBM]
+    I --> J[Isotonic calibration]
+    H --> K[Champion / challenger gate]
+    J --> K
+    J --> L[Expected-value policy]
+    L --> M[FastAPI scoring service]
+    M --> N[Streamlit demo]
+    J --> O[PSI + vintage monitoring]
+    O --> K
 ```
-src/
-  columns.py            the point-in-time contract: all 151 columns classified
-  config.py             paths, seed, and the two population rules
-  get_data.py           resumable ranged download, SHA-256 verified
-  build_warehouse.py    DuckDB load and the modelling population
-  features.py           contract-restricted feature matrix
-  leakage_experiment.py the 2x2 above
-  scorecard.py          WOE / IV binning and a points-based scorecard
-  cost.py               loss given default, and expected-value decisioning
-  train.py              baseline -> scorecard -> LightGBM -> calibration -> policy
-  drift.py              PSI, characteristic analysis, performance by vintage
-  monitor.py            monitoring run and the champion/challenger gate
-  charts.py             the five figures
-  report.py             the PDF summary
-  serve.py              FastAPI scoring service
-app/
-  streamlit_app.py      interactive demo
-tests/                  45 tests, including the leakage guard
-docs/
-  credit-risk-summary.pdf   four-page write-up
-  00-goal-and-why.md        what I set out to prove
-  modelling.md              the modelling decisions in detail
-  mlops.md                  serving, monitoring, promotion
-  decision-log.md           every judgement call, including the wrong ones
-```
 
-Run it:
+The project is deliberately organised as a system rather than a single training script:
 
-```bash
-pip install -r requirements.txt
-make all          # download (1.56 GB, resumable), build, experiment, train, monitor
-make app          # the interactive demo
-make api          # the scoring service on :8000
-make test         # 45 tests
-```
+1. **Acquire the data safely.** The download resumes after interruption and verifies the expected file size and SHA-256 hash.
+2. **Build a warehouse.** DuckDB reads and filters the 1.56 GB extract without pulling everything into pandas memory.
+3. **Define the population honestly.** Only resolved loans with enough time to complete their contractual term are labelled.
+4. **Enforce point-in-time correctness.** Every one of the 151 source columns gets a category and a reason.
+5. **Engineer a small, defensible feature set.** Derived features have a reason for existing; missing values are not silently invented away.
+6. **Evaluate forward in time.** Training, calibration, and test windows are separated by origination date.
+7. **Train two useful kinds of model.** LightGBM provides strong ranking performance; the scorecard provides readable adverse-action reasons.
+8. **Make an economic decision.** The approval threshold changes with the loan’s interest, term, exposure, and LGD.
+9. **Serve and monitor it.** The API returns a decision, not just a probability, while PSI, calibration, AUC, and profit feed the promotion gate.
 
-`make sample` does the same on a 200k-row slice if you want to see it work
-without the full download.
+---
 
+## The point-in-time contract
 
+The most important file in the repository is [`src/columns.py`](src/columns.py).
 
-## The centrepiece: a contract, not a convention
-
-Every one of the 151 source columns is classified in `src/columns.py` with a
-written reason:
-
-```python
-"recoveries": (OUTCOME, "post-charge-off recovery; non-zero only if it defaulted"),
-"chargeoff_within_12_mths": (ORIGINATION,
-                             "charge-offs on OTHER accounts pre-application"),
-"last_fico_range_high": (OUTCOME, "FICO at latest pull, i.e. after the outcome"),
-"zip_code": (SENSITIVE, "3-digit ZIP; recognised proxy for race under ECOA"),
-```
+Every source column is classified as one of:
 
 | Category | Count | Meaning |
-|---|---|---|
-| ORIGINATION | 102 | known at underwriting; a model may use it |
-| OUTCOME | 38 | recorded during or after servicing; using it is leakage |
-| SENSITIVE | 2 | known, but excluded on fair-lending grounds |
-| DROP | 7 | constant, empty, free text, or an identifier |
-| LABEL / META | 2 | the target, and the date the split uses |
+|---|---:|---|
+| `ORIGINATION` | 102 | Known when the application is underwritten |
+| `OUTCOME` | 38 | Recorded during or after servicing; forbidden as a feature |
+| `SENSITIVE` | 2 | Known at origination, but excluded for fair-lending reasons |
+| `DROP` | 7 | Constant, empty, free text, or an identifier |
+| `LABEL / META` | 2 | The target and the date used for splitting |
 
-Two things make this a contract rather than a comment:
+The contract is enforced in two directions:
 
 ```python
-check_coverage(source_columns)   # fails if a column is unreviewed
-assert_no_leakage(feature_names) # fails if an OUTCOME column reaches the model
+check_coverage(source_columns)
+# Stops the pipeline when an upstream extract adds or removes a column.
+
+assert_no_leakage(feature_names)
+# Stops training when an OUTCOME column reaches the feature matrix.
 ```
 
-If Lending Club's mirror ever gains a column, the pipeline **stops** instead of
-quietly letting an unclassified field into the model. Both guards are tested for
-actually firing — a check that never fails is decoration.
+Both checks have tests that prove they fail when they should. A guard that never gets tested in its failure mode is not really a guard.
 
-`chargeoff_within_12_mths` is the interesting one in the other direction. It
-sounds like an outcome and is not: it counts charge-offs on the borrower's
-*other* accounts before this loan existed. Excluding it would throw away real
-signal for no reason. Over-correcting is its own mistake.
+The project also avoids the opposite mistake. `chargeoff_within_12_mths` sounds like a target-related field, but it describes charge-offs on the borrower’s **other accounts before this loan existed**. It is legitimate origination-time information and stays in the model.
 
+Geography is handled separately. `zip_code` and `addr_state` carry signal, but they are excluded as sensitive proxy variables. Improving AUC is not a sufficient reason to build a postcode-based decline policy.
 
+---
 
-## The subtle trap
+## The modelling population
 
-![Single feature AUC](docs/assets/single_feature_auc.png)
+The raw file contains 2,260,701 loans. The final population is smaller by design:
 
-`last_fico_range_high` scores **0.9173 entirely on its own** — better than
-`recoveries` at 0.8940. It is the borrower's credit score at the *most recent*
-bureau pull, which on a defaulted loan happened after the default wrecked it. It
-is not a payment field, it sits in the middle of a block of legitimate FICO
-columns, and sorted alphabetically it lands right next to `fico_range_high`.
-That is exactly how it ends up in a feature list by accident.
-
-`out_prncp` scores a flat **0.5000** — leaky in principle, inert here, because
-in a matured population outstanding principal is always zero. Worth saying
-rather than hiding.
-
-
-
-## A prediction of mine that was wrong
-
-I expected the random train/test split to inflate the score too. It did the
-opposite: **−0.0042**. The random split was very slightly *harder*.
-
-The mechanism is my own population rule. Requiring every loan to have had its
-full contractual term before the snapshot removes the 2017 and 2018 vintages
-entirely, and what remains defaults at 14–16% in every single year from 2010 to
-2016. There is almost no temporal drift left for a random split to exploit.
-
-It stays in the write-up as a failed hypothesis with the mechanism explained. It
-makes the leakage result more credible, not less — one claim held spectacularly,
-the other did not, and both were measured the same way.
-
-
-
-## The population is smaller than it looks, on purpose
-
-| Stage | Loans | Removed |
-|---|---|---|
-| All loans in the extract | 2,260,701 | |
-| Resolved outcome only | 1,348,059 | 912,642 still in flight |
-| Had full term before snapshot | **779,025** | 569,034 not yet matured |
+| Stage | Loans | Why rows leave |
+|---|---:|---|
+| Raw extract | 2,260,701 | — |
+| Resolved outcomes | 1,348,059 | 912,642 loans are still in flight |
+| Full contractual term completed | **779,025** | 569,034 loans have not matured |
 | Charged off | 118,371 | **15.19% default rate** |
 
-Keeping only resolved loans is not enough. A 60-month loan issued in 2017 cannot
-appear as *Fully Paid* in a 2018 Q4 extract — it has not had time. Filtering on
-resolved status alone therefore keeps recent vintages **only if they defaulted
-early**. Survivorship bias, pointing the wrong way.
+A resolved-status filter alone is not enough. A 60-month loan issued in 2017 cannot be “Fully Paid” in a 2018 Q4 snapshot unless something unusual happened. Keeping those rows would preferentially retain loans that defaulted early and create survivorship bias.
 
-The maturity rule keeps 100% of 2013 originations, 30.6% of 2016, and **none at
-all** of 2017 and 2018. Losing a quarter of a million recent loans hurts and it
-is still correct.
+The maturity rule removes the 2017 and 2018 vintages entirely. That costs data, but it avoids pretending that an unfinished loan has a known outcome.
 
+The split is also time-based:
 
+```text
+fit         230,706 loans   2007-06 to 2013-12
+calibrate   175,509 loans   2014-01 to 2014-12
+test        372,810 loans   2015-01 to 2016-03
+```
 
-## Models, and what each one is for
+There is no random mixing of future vintages into the past. That is closer to how the model will actually be used.
+
+---
+
+## Feature engineering without feature theatre
+
+The feature pipeline starts from the contract-approved origination columns and adds only features that can be explained:
+
+| Feature | Why it exists |
+|---|---|
+| `fico` | Converts the five-point FICO band into its midpoint |
+| `loan_to_income` | Measures the new loan relative to stated income |
+| `installment_to_income` | Captures the annual payment burden |
+| `revol_util_calc` | Recomputes utilisation when the source value is missing |
+| `emp_length_years` | Converts the ordered employment text into a number |
+| `is_thin_file` | Distinguishes short credit histories from established ones |
+| `has_derogatory` | Summarises sparse derogatory indicators |
+
+Missing values are kept meaningful. LightGBM can route `NaN` values through their own branches, and the scorecard gives missing values their own WOE bin. A missing value is not automatically the median of an imaginary borrower.
+
+Categorical variables remain categorical. LightGBM handles them natively, and category levels are frozen from the training matrix before they are reused for testing and serving.
+
+The final model matrix contains **105 features**. When Lending Club’s own `grade`, `sub_grade`, and `int_rate` are removed, the project can measure how much performance comes from independently learning borrower risk rather than agreeing with Lending Club’s existing underwriting system.
+
+---
+
+## Models and results
 
 | Model | AUC | Gini | KS | Brier |
-|---|---|---|---|---|
+|---|---:|---:|---:|---:|
 | Constant baseline | 0.5000 | 0.0000 | — | 0.12877 |
-| WOE scorecard (27 variables) | 0.6892 | 0.3783 | 0.2752 | 0.12146 |
+| WOE scorecard, 27 variables | 0.6892 | 0.3783 | 0.2752 | 0.12146 |
 | LightGBM | 0.7009 | 0.4019 | 0.2919 | 0.12129 |
-| LightGBM, isotonic calibrated | 0.7007 | 0.4014 | 0.2918 | **0.12069** |
+| **LightGBM + isotonic calibration** | **0.7007** | **0.4014** | **0.2918** | **0.12069** |
 
-**Accuracy is deliberately not reported.** At a 15% default rate, predicting
-that everybody repays scores 85% and is worthless.
+Accuracy is intentionally missing. With a 15% default rate, predicting “everyone repays” already produces 85% accuracy. That number says almost nothing about whether the model is useful.
 
-The scorecard is not a warm-up exercise. A US lender has to send an adverse
-action notice stating *why* an application was declined, in specific reasons.
-"The 340-tree ensemble assigned you a high score" is not a reason. So the
-scorecard is built properly — quantile bins, weight of evidence, IV selection, a
-points table scaled so that 20 points doubles the odds — and the API returns the
-bins that cost an applicant the most points.
+### Why both a scorecard and LightGBM?
+
+The scorecard is not included as a beginner exercise. It addresses a real credit requirement: a lender must be able to explain why an application was declined.
+
+The scorecard uses:
+
+- quantile bins for skewed credit variables
+- explicit missing-value bins
+- rare-category collapsing
+- weight of evidence and information value
+- Laplace smoothing to avoid infinite values
+- L2-regularised logistic regression
+- points scaled so 20 points doubles the odds
+
+The scorecard reaches most of LightGBM’s ranking power with 27 readable variables. LightGBM wins the benchmark, but the difference is measured rather than hand-waved.
 
 ![Calibration](docs/assets/calibration.png)
 
-Calibration improves Brier while leaving AUC untouched, which is the point:
-**calibration changes the price, never the order.** It only closes about a third
-of the gap, and the reason is honest — isotonic was fitted on 2014 originations,
-which defaulted at 14.63%, and the test vintages run hotter.
+Calibration improves the probability estimate without changing the ranking:
 
+> **Calibration changes the price, not the order.**
 
+The calibrated model still under-predicts later vintages because it was calibrated on 2014, whose default rate was 14.63%, while the test vintages run hotter. That limitation is visible in monitoring instead of being hidden behind a prettier chart.
 
-## A probability is not a decision
+---
 
-Approving a loan is worth `(1−p)·interest − p·LGD·exposure`, so it is worth
-doing while
+## From probability to an underwriting decision
 
+A probability of default is not a decision by itself.
+
+For a loan, the expected value is approximately:
+
+```text
+(1 - p) × interest_if_paid - p × LGD × exposure
 ```
-p  <  interest / (interest + LGD · exposure)
+
+Approve while:
+
+```text
+p < interest / (interest + LGD × exposure)
 ```
 
-That break-even is **a property of the individual loan, not a global constant**.
-A 60-month loan at 26% earns far more interest than a 36-month loan at 7% and
-can therefore carry far more risk. Every "we chose a threshold of 0.5" notebook
-is implicitly claiming otherwise.
+That break-even probability belongs to the **loan**, not the model globally. A high-rate, longer-term loan can tolerate more risk than a short, low-rate loan because it earns more interest.
 
-Loss given default is **measured, not assumed** — from actual recoveries on
-loans that charged off: mean 0.539, median 0.562. This is the one place the
-post-origination columns are the right tool. Using them as features predicts the
-future from the future; using them to measure what past defaults cost is just
-accounting. Same columns, opposite verdict, and the difference is the direction
-of time.
+The project estimates LGD from observed recoveries on charged-off loans rather than assuming a convenient number. Importantly, post-origination fields are used for measuring historical cost, not for predicting future outcomes. The direction of time is what changes the interpretation.
 
 | Policy | Approved | Book bad rate | Profit / application |
-|---|---|---|---|
-| approve all (what Lending Club did) | 100.0% | 15.18% | $888.80 |
-| cut at p > 0.50 | 100.0% | 15.17% | $889.57 |
-| cut at Youden J | 56.8% | 8.57% | **$649.83** |
-| per-loan expected value > 0 | 97.6% | 14.70% | **$898.62** |
-| best fixed cutoff, in hindsight | 94.0% | 13.80% | $904.60 |
+|---|---:|---:|---:|
+| Approve all — the historical policy | 100.0% | 15.18% | $888.80 |
+| Fixed cutoff at `p > 0.50` | 100.0% | 15.17% | $889.57 |
+| Youden’s J cutoff | 56.8% | 8.57% | **$649.83** |
+| Per-loan expected value > 0 | 97.6% | 14.70% | **$898.62** |
+| Best fixed cutoff in hindsight | 94.0% | 13.80% | $904.60 |
 
 ![Profit curve](docs/assets/profit_curve.png)
 
-Two results worth pausing on.
+The statistically attractive cutoff is not the economically attractive one. Youden’s J declines 43% of applications and destroys $239 per application relative to approving everyone.
 
-**The statistically optimal cutoff is a disaster.** Youden's J maximises
-TPR − FPR, declines 43% of applications, and destroys **$239 of value per
-application** against simply approving everyone. It is optimal with respect to a
-criterion that takes no view on what a mistake costs.
+The expected-value policy adds $9.82 per application, about 1.1%. That gain should not be oversold: every loan in this dataset was already approved by Lending Club. The easy declines are missing, so this model is finding residual risk inside an already screened population.
 
-**`p > 0.50` does nothing at all.** Not one application in 372,810 has a
-predicted probability above 0.5, so the industry-default threshold approves the
-entire book. It is not a conservative choice; it is not a choice.
+---
 
-The expected-value rule adds **$9.82 per application**, about 1.1%. That figure
-deserves context rather than spin: every loan here was *already approved* by
-Lending Club's own underwriting, so the model is finding residual risk among
-applicants who already passed a credit screen. The easy declines happened
-upstream and are not in the data.
+## Monitoring and model promotion
 
+The monitoring layer asks three different questions:
 
+1. **Did the population move?** Score PSI by vintage and variable-level characteristic analysis.
+2. **Can the model still rank risk?** AUC by vintage.
+3. **Are the probabilities priced correctly?** Observed versus predicted default rates.
 
-## Monitoring: three signals that disagree
+Those signals disagree, which is why all three are needed:
 
-![Drift monitor](docs/assets/drift_monitor.png)
+| Signal | Finding | Interpretation |
+|---|---|---|
+| Score PSI | 0.0609 → 0.1236 | Investigate population movement |
+| AUC | 0.6910 → 0.7102 | Ranking remains healthy |
+| Calibration | Under-predicts by 1.3 → 3.1 pp | Recalibration is needed |
 
-| Signal | What it says |
-|---|---|
-| Score PSI | rises 0.0609 → 0.1236, crossing the 0.10 "investigate" line |
-| AUC | **improves** 0.6910 → 0.7102 — discrimination is fine |
-| Calibration | under-predicts every quarter, gap widening 1.3 → 3.1 pp |
+The largest variable shift is `initial_list_status` at PSI 0.4904. That represents a change in Lending Club’s listing operations, not necessarily a change in borrower quality. Retraining immediately would solve the wrong problem.
 
-Any one of these alone gives the wrong answer. PSI alone says retrain. AUC alone
-says relax. Only together do they say what is actually true: the model still
-ranks well but is systematically under-pricing, and the fix is recalibration,
-not retraining.
+The promotion gate compares the interpretable scorecard challenger with the LightGBM champion:
 
-The most-shifted variable is `initial_list_status` at PSI 0.4904 — which records
-whether Lending Club listed a loan whole or fractionally. That is a change in
-**their own platform operations**, not in borrower quality. Reacting to it by
-retraining would be solving the wrong problem, and per-variable PSI is precisely
-what tells you so.
-
-### The promotion gate
-
-The scorecard was run as a challenger against the LightGBM champion:
-
-```
-[FAIL] discrimination        AUC 0.6892 vs 0.7007 (tolerance 0.0020)
-[FAIL] calibration           Brier 0.12146 vs 0.12069 (tolerance 0.00050)
+```text
+[FAIL] discrimination        AUC 0.6892 vs 0.7007
+[FAIL] calibration           Brier 0.12146 vs 0.12069
 [FAIL] profit                $332.1m vs $335.0m
 [PASS] population stability  0 vintage(s) flagged as shifted
 
 decision: KEEP CHAMPION
 ```
 
-So interpretability costs **0.012 AUC and 0.86% of profit** on a $335m book.
-That is a number a credit committee can accept or reject, which is considerably
-more useful than an opinion about interpretability. Failing the gate is the
-expected outcome most of the time — that is the point of having one.
+The scorecard’s interpretability costs 0.012 AUC and 0.86% of profit on a $335m book. That is a trade-off a credit committee can discuss with numbers instead of opinions.
 
-
+---
 
 ## Serving
 
+The FastAPI service exposes two endpoints:
+
+- `GET /health` — reports whether the model artefact is available and what it contains
+- `POST /score` — returns a complete decision for one application
+
+The response includes the model probability, the loan-specific break-even probability, expected value, recommendation, scorecard points, defaulted-field count, and adverse-action reasons.
+
 ```bash
 make api
-curl -X POST localhost:8000/score -H 'content-type: application/json' -d '{
-  "loan_amnt": 15000, "term_months": 36, "int_rate": 12.5,
-  "annual_inc": 65000, "dti": 18.2, "fico_range_low": 690,
-  "fico_range_high": 694, "grade": "C", "credit_history_months": 168
-}'
 ```
+
+```bash
+curl -X POST http://localhost:8000/score \
+  -H 'content-type: application/json' \
+  -d '{
+    "loan_amnt": 15000,
+    "term_months": 36,
+    "int_rate": 12.5,
+    "annual_inc": 65000,
+    "dti": 18.2,
+    "fico_range_low": 690,
+    "fico_range_high": 694,
+    "grade": "C",
+    "credit_history_months": 168
+  }'
+```
+
+Example response:
 
 ```json
 {
@@ -316,56 +330,248 @@ curl -X POST localhost:8000/score -H 'content-type: application/json' -d '{
   "scorecard_points": 612.4,
   "fields_supplied": 9,
   "fields_defaulted": 96,
-  "adverse_action_reasons": [...]
+  "adverse_action_reasons": []
 }
 ```
 
-The response reports how many fields were **defaulted**, because a score built
-from nine supplied values and ninety-six training medians deserves less trust
-than one built from a full application, and the caller should be able to see the
-difference.
+The API accepts a practical subset of application fields. Missing fields fall back to training-set medians or modes, but the response tells the caller how much defaulting occurred.
 
-A test asserts that sending `recoveries` through the free-form `extra` field
-**cannot change the prediction** — the API must not become a back door around
-the contract.
+The free-form `extra` field is not a leakage back door. A test confirms that sending `recoveries` or `last_fico_range_high` cannot change the prediction.
 
-The Dockerfile deliberately does **not** bake the model in; it is mounted at run
-time, and `/health` returns 503 rather than crashing when it is absent. A
-container that dies because its artefact is missing is much harder to diagnose
-in a cluster than one that says why.
+The Docker image is intentionally small and production-oriented:
 
-> Docker is not installed on the machine I built this on, so the image is built
-> and smoke-tested by GitHub Actions rather than locally. CI starts the
-> container with no model mounted and asserts `/health` answers.
+- Python 3.12 slim base
+- serving dependencies only
+- LightGBM’s OpenMP runtime installed explicitly
+- non-root `scorer` user
+- model mounted at runtime instead of baked into the image
+- `/health` returns 503 with a useful message when the model is absent
 
+```bash
+docker build -t credit-risk .
+docker run -p 8000:8000 \
+  -v "$(pwd)/data/models:/app/data/models:ro" \
+  credit-risk
+```
 
+---
 
-## Honest limitations
+## Interactive demo
 
-- **Selection bias is unavoidable here.** Every loan in this file was approved
-  by Lending Club. The applicants they declined are not in the data, so the
-  model is trained on a pre-screened population and the achievable profit lift
-  is correspondingly modest. Reject inference is the standard remedy and is not
-  implemented.
-- **The maturity rule costs a quarter of a million loans.** Survival modelling
-  of time-to-default would let it be relaxed.
-- **Calibration is fitted on a fixed 2014 slice.** Monitoring shows this is
-  already stale; a rolling recalibration on the most recent closed book is the
-  obvious fix.
-- **Geography is excluded, and that is not free.** `zip_code` and `addr_state`
-  carry genuine signal. They are out because ECOA treats geography as a proxy
-  for protected characteristics, and a model that declines people for their
-  postcode is a redlining problem regardless of its AUC.
-- **The economics are simplified.** One pooled LGD, scheduled interest as the
-  upside, no funding cost, no prepayment, no discounting. Each is a real
-  omission; none changes the ranking of the policies.
+The Streamlit application puts the project’s main ideas in one place:
 
+- score an application
+- inspect adverse-action reasons
+- see the leakage experiment
+- move the approval cutoff and watch profit change
+- inspect drift, calibration, and the promotion gate
 
+```bash
+make app
+```
+
+Then open the local Streamlit URL shown in your terminal.
+
+---
+
+## Tech stack
+
+### Data and storage
+
+- **Python 3.12** — primary language and runtime
+- **DuckDB** — local analytical warehouse and memory-efficient CSV filtering
+- **Pandas / NumPy** — feature engineering and numerical work
+- **PyArrow** — columnar data support
+
+### Machine learning
+
+- **LightGBM** — gradient-boosted decision trees with native categorical features
+- **scikit-learn** — calibration, metrics, validation utilities, and model evaluation
+- **SciPy** — scientific computing support
+- **Custom WOE scorecard** — explainable credit scoring and adverse-action reasons
+
+### MLOps and delivery
+
+- **MLflow** with a local SQLite backend — parameters, metrics, and artefacts
+- **FastAPI + Pydantic** — typed scoring API and request validation
+- **Uvicorn** — ASGI server
+- **Docker** — minimal serving container with runtime model mounting
+- **Streamlit** — interactive model and monitoring demo
+- **pytest** — contract, modelling, API, and economics tests
+- **Ruff** — linting
+- **Make** — reproducible pipeline commands
+
+---
+
+## Repository map
+
+```text
+.
+├── src/
+│   ├── columns.py             point-in-time data contract and leakage guards
+│   ├── config.py              paths, constants, source URL, population rules
+│   ├── get_data.py            resumable download with integrity checks
+│   ├── build_warehouse.py     raw DuckDB table and matured population
+│   ├── features.py            parsing, derived features, matrix construction
+│   ├── leakage_experiment.py  controlled 2x2 leakage experiment
+│   ├── scorecard.py            WOE / IV binning and points-based scorecard
+│   ├── cost.py                LGD, expected value, and policy economics
+│   ├── train.py               fit, calibrate, evaluate, and persist models
+│   ├── drift.py               PSI and vintage-level monitoring calculations
+│   ├── monitor.py              champion/challenger promotion gate
+│   ├── charts.py              reproducible project figures
+│   ├── report.py              PDF report generation
+│   └── serve.py               FastAPI health and scoring endpoints
+├── app/
+│   └── streamlit_app.py       interactive underwriting and monitoring demo
+├── tests/
+│   ├── test_contract.py       point-in-time and leakage protection
+│   ├── test_modelling.py      WOE, PSI, feature, and economics invariants
+│   └── test_api.py            request validation and serving behaviour
+├── docs/
+│   ├── 00-goal-and-why.md     project motivation and claims
+│   ├── modelling.md            population, features, models, and results
+│   ├── mlops.md               serving, monitoring, CI, and promotion
+│   ├── decision-log.md        decisions, trade-offs, and failed hypotheses
+│   └── assets/                 generated charts used by the docs and demo
+├── Dockerfile                 production-style scoring image
+├── Makefile                   end-to-end developer commands
+├── pyproject.toml             package metadata, Ruff, and pytest settings
+└── requirements.txt            pinned runtime and development dependencies
+```
+
+---
+
+## Quick start
+
+### Option 1: see the full pipeline
+
+The full dataset is approximately 1.56 GB. The download is resumable, so an interrupted run can continue rather than starting over.
+
+```bash
+git clone https://github.com/sagarkumarmishra/credit-risk-underwriting.git
+cd credit-risk-underwriting
+
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
+pip install -r requirements.txt
+make all
+```
+
+`make all` runs:
+
+```text
+Download → DuckDB warehouse → leakage experiment → training → monitoring → charts → PDF report
+```
+
+### Option 2: try it quickly on a sample
+
+```bash
+make sample
+```
+
+This exercises the same code paths using a 200k-row slice. The published numbers in the README come from the full dataset.
+
+### Run the individual stages
+
+```bash
+make data       # download and verify the raw dataset
+make warehouse  # build DuckDB tables and the modelling population
+make leakage    # run the 2x2 leakage experiment
+make train      # baseline, scorecard, LightGBM, calibration, policy
+make monitor    # PSI, performance by vintage, promotion gate
+make charts     # regenerate figures
+make report     # build the PDF summary
+make test       # run the test suite
+make lint       # run Ruff
+make api        # start FastAPI on port 8000
+make app        # start Streamlit
+make mlflow     # open local MLflow history
+```
+
+---
+
+## Tests that protect the important parts
+
+The test suite is designed around failures that can produce plausible-looking but wrong results:
+
+| Test area | What it protects |
+|---|---|
+| Contract coverage | New or missing source columns cannot pass silently |
+| Leakage guard | Post-origination fields cannot enter the feature matrix |
+| Origination classification | Legitimate bureau fields are not over-excluded |
+| WOE direction | Safer bins receive the correct sign |
+| PSI bin edges | New distributions are compared against baseline bins |
+| Expected-value algebra | Approval flips at the correct break-even probability |
+| Feature arithmetic | Zero income becomes unknown rather than infinity |
+| API validation | Impossible loan applications are rejected |
+| Serving contract | Minimal requests return a declared level of defaulting |
+| Monotonicity | A clearly worse credit file does not score as safer |
+| Leakage through `extra` | Free-form API inputs cannot bypass the contract |
+
+Run them with:
+
+```bash
+make test
+```
+
+---
+
+## What I learned
+
+Three conclusions survived the work:
+
+1. **Leakage is a lineage problem before it is a modelling problem.** The perfect model was the least useful model in the experiment.
+2. **AUC is not the deliverable.** A probability only becomes useful when it is calibrated and connected to the economics of the individual loan.
+3. **A model is not production-ready because it trains.** It needs a contract, an API, tests, monitoring, and a promotion rule that can say “no.”
+
+One prediction did not survive: I expected the random split to inflate performance. It did not. The maturity rule removed almost all remaining vintage drift, and the random split was slightly harder. That result stays in the project because honest analysis includes the hypothesis that failed.
+
+---
+
+## Limitations and next steps
+
+This is a serious prototype, not a claim that the problem is finished.
+
+- **Selection bias:** all loans were already accepted by Lending Club; declined applicants are absent.
+- **Maturity filtering:** 569,034 loans are removed; survival or time-to-default modelling could recover them.
+- **Calibration drift:** the fixed 2014 calibration slice is already stale; rolling recalibration is the obvious next improvement.
+- **Pooled LGD:** loss given default should eventually vary by term, grade, vintage, and borrower segment.
+- **Simplified economics:** funding costs, prepayment, discounting, and operational costs are not modelled.
+- **Manual promotion:** the gate reports a decision, but deployment approval remains human.
+- **No shadow deployment yet:** a real rollout should score champion and challenger side by side before promotion.
+- **No automated alerting or retraining schedule:** monitoring detects problems; a production platform would also route and act on them.
+
+---
+
+## Further reading
+
+- [What I set out to prove](docs/00-goal-and-why.md)
+- [Modelling decisions](docs/modelling.md)
+- [Serving, monitoring, and promotion](docs/mlops.md)
+- [Decision log](docs/decision-log.md)
+- [Four-page project summary](docs/credit-risk-summary.pdf)
+- [The point-in-time contract](src/columns.py)
+
+---
 
 ## Data
 
-Lending Club accepted loans, 2007 through 2018 Q4. 2,260,701 rows, 151 columns,
-1.56 GB, SHA-256 `3eae03c2…` verified at download. Lending Club took their own
-download page offline years ago; the mirror used is recorded in `src/config.py`,
-and the download fails loudly if the remote file ever changes size, because
-every number in this README was measured against the file as it is.
+The project uses Lending Club accepted loans from 2007 through 2018 Q4:
+
+- 2,260,701 raw rows
+- 151 source columns
+- approximately 1.56 GB
+- source file and download details recorded in [`src/config.py`](src/config.py)
+- expected file size checked before the pipeline accepts the download
+
+The dataset is used for research and demonstration. The repository does not contain the raw loan file or trained model artefacts.
+
+---
+
+<div align="center">
+
+Built as a practical bridge between data engineering and machine learning: careful about time, honest about uncertainty, and explicit about the cost of a decision.
+
+</div>
