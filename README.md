@@ -4,6 +4,21 @@
 
 ### A point-in-time, production-minded credit decisioning system
 
+<p>
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+  <img alt="DuckDB" src="https://img.shields.io/badge/DuckDB-1.5.5-FFF0B3?style=for-the-badge&logo=duckdb&logoColor=black" />
+  <img alt="Pandas" src="https://img.shields.io/badge/Pandas-2.3.3-150458?style=for-the-badge&logo=pandas&logoColor=white" />
+  <img alt="NumPy" src="https://img.shields.io/badge/NumPy-2.5.1-013243?style=for-the-badge&logo=numpy&logoColor=white" />
+  <img alt="scikit-learn" src="https://img.shields.io/badge/scikit--learn-1.9.1-F7931E?style=for-the-badge&logo=scikit-learn&logoColor=white" />
+  <img alt="LightGBM" src="https://img.shields.io/badge/LightGBM-4.7.0-9ACD32?style=for-the-badge&logo=lightgbm&logoColor=black" />
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.141.1-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
+  <img alt="Streamlit" src="https://img.shields.io/badge/Streamlit-1.64.0-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white" />
+  <img alt="MLflow" src="https://img.shields.io/badge/MLflow-3.16.1-0194E2?style=for-the-badge&logo=mlflow&logoColor=white" />
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+  <img alt="pytest" src="https://img.shields.io/badge/pytest-9.1.1-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" />
+  <img alt="Ruff" src="https://img.shields.io/badge/Ruff-0.16.8-5C8AFA?style=for-the-badge&logo=ruff&logoColor=white" />
+</p>
+
 Predict default risk using only information available **before a loan is funded** — then turn that probability into a loan-specific approval decision, an explainable score, and a monitoring signal.
 
 <p>
