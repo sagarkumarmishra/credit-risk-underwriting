@@ -1,0 +1,41 @@
+[project]
+name = "credit-risk-underwriting"
+version = "1.0.0"
+description = "Point-in-time correct probability of default, with an expected-value lending policy"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 90
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    # Percent formatting is used consistently across the project. It keeps
+    # multi-line report output aligned in a way f-strings do not, and rewriting
+    # ~150 call sites to satisfy a style preference would be churn.
+    "UP031",
+    # zip(strict=) matters when the lengths might differ. Every zip here pairs a
+    # matplotlib bar container with the list that produced it, so they cannot.
+    "B905",
+    # dict(...) for matplotlib kwargs (arrowprops, bbox) is the convention in
+    # matplotlib's own documentation and reads better than a brace literal.
+    "C408",
+    # The scorecard maths reads better with the conventional variable names
+    # from the literature than with descriptive ones.
+    "E741",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Streamlit needs its page config set before anything else imports, so the
+# project imports land below it.
+"app/streamlit_app.py" = ["E402"]
+# Tests build deliberately awkward frames; long lines are clearer than wrapping.
+"tests/*" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning:starlette.*",
+    "ignore::DeprecationWarning:anyio.*",
+]

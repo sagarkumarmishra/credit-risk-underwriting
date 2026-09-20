@@ -1,0 +1,31 @@
+# Core
+pandas==2.3.3
+numpy==2.5.1
+duckdb==1.5.5
+pyarrow==25.0.1
+
+# Modelling
+scikit-learn==1.9.1
+lightgbm==4.7.0
+scipy==1.18.1
+
+# Experiment tracking. Backed by a local sqlite file, not the plain filesystem
+# store -- MLflow 3 put that into maintenance mode and stops writing to it.
+mlflow==3.16.1
+
+# Charts and the PDF report
+matplotlib==3.11.2
+reportlab==5.0.1
+
+# Serving
+fastapi==0.141.1
+uvicorn==0.53.0
+pydantic==2.13.5
+
+# Interactive demo
+streamlit==1.64.0
+
+# Tests and linting
+pytest==9.1.1
+httpx==0.28.1
+ruff==0.16.8
