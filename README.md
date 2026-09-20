@@ -40,7 +40,7 @@ Predict default risk using only information available **before a loan is funded*
 
 </div>
 
----
+
 
 ## The short version
 
@@ -63,7 +63,7 @@ A perfect score can be completely useless. The model only matters if it can make
 
 ![Leakage 2x2](docs/assets/leakage_grid.png)
 
----
+
 
 ## Why this project exists
 
@@ -85,7 +85,7 @@ A feature recorded after the event cannot be used to predict that event. This pr
 
 The machine-learning work is important. The time-awareness comes first.
 
----
+
 
 ## What the system does
 
@@ -121,7 +121,7 @@ The project is deliberately organised as a system rather than a single training 
 8. **Make an economic decision.** The approval threshold changes with the loan’s interest, term, exposure, and LGD.
 9. **Serve and monitor it.** The API returns a decision, not just a probability, while PSI, calibration, AUC, and profit feed the promotion gate.
 
----
+
 
 ## The point-in-time contract
 
@@ -153,7 +153,7 @@ The project also avoids the opposite mistake. `chargeoff_within_12_mths` sounds 
 
 Geography is handled separately. `zip_code` and `addr_state` carry signal, but they are excluded as sensitive proxy variables. Improving AUC is not a sufficient reason to build a postcode-based decline policy.
 
----
+
 
 ## The modelling population
 
@@ -180,7 +180,7 @@ test        372,810 loans   2015-01 to 2016-03
 
 There is no random mixing of future vintages into the past. That is closer to how the model will actually be used.
 
----
+
 
 ## Feature engineering without feature theatre
 
@@ -202,7 +202,7 @@ Categorical variables remain categorical. LightGBM handles them natively, and ca
 
 The final model matrix contains **105 features**. When Lending Club’s own `grade`, `sub_grade`, and `int_rate` are removed, the project can measure how much performance comes from independently learning borrower risk rather than agreeing with Lending Club’s existing underwriting system.
 
----
+
 
 ## Models and results
 
@@ -239,7 +239,7 @@ Calibration improves the probability estimate without changing the ranking:
 
 The calibrated model still under-predicts later vintages because it was calibrated on 2014, whose default rate was 14.63%, while the test vintages run hotter. That limitation is visible in monitoring instead of being hidden behind a prettier chart.
 
----
+
 
 ## From probability to an underwriting decision
 
@@ -275,7 +275,7 @@ The statistically attractive cutoff is not the economically attractive one. Youd
 
 The expected-value policy adds $9.82 per application, about 1.1%. That gain should not be oversold: every loan in this dataset was already approved by Lending Club. The easy declines are missing, so this model is finding residual risk inside an already screened population.
 
----
+
 
 ## Monitoring and model promotion
 
@@ -308,7 +308,7 @@ decision: KEEP CHAMPION
 
 The scorecard’s interpretability costs 0.012 AUC and 0.86% of profit on a $335m book. That is a trade-off a credit committee can discuss with numbers instead of opinions.
 
----
+
 
 ## Serving
 
@@ -374,7 +374,7 @@ docker run -p 8000:8000 \
   credit-risk
 ```
 
----
+
 
 ## Interactive demo
 
@@ -392,7 +392,7 @@ make app
 
 Then open the local Streamlit URL shown in your terminal.
 
----
+
 
 ## Tech stack
 
@@ -421,7 +421,7 @@ Then open the local Streamlit URL shown in your terminal.
 - **Ruff** — linting
 - **Make** — reproducible pipeline commands
 
----
+
 
 ## Repository map
 
@@ -460,7 +460,7 @@ Then open the local Streamlit URL shown in your terminal.
 └── requirements.txt            pinned runtime and development dependencies
 ```
 
----
+
 
 ## Quick start
 
@@ -510,7 +510,7 @@ make app        # start Streamlit
 make mlflow     # open local MLflow history
 ```
 
----
+
 
 ## Tests that protect the important parts
 
@@ -536,7 +536,7 @@ Run them with:
 make test
 ```
 
----
+
 
 ## What I learned
 
@@ -563,7 +563,7 @@ This is a serious prototype, not a claim that the problem is finished.
 - **No shadow deployment yet:** a real rollout should score champion and challenger side by side before promotion.
 - **No automated alerting or retraining schedule:** monitoring detects problems; a production platform would also route and act on them.
 
----
+
 
 ## Further reading
 
@@ -574,7 +574,7 @@ This is a serious prototype, not a claim that the problem is finished.
 - [Four-page project summary](docs/credit-risk-summary.pdf)
 - [The point-in-time contract](src/columns.py)
 
----
+
 
 ## Data
 
@@ -588,7 +588,7 @@ The project uses Lending Club accepted loans from 2007 through 2018 Q4:
 
 The dataset is used for research and demonstration. The repository does not contain the raw loan file or trained model artefacts.
 
----
+
 
 <div align="center">
 
